@@ -29,21 +29,28 @@ jobs:
           echo "Downloaded $TARBALL_NAME"
         shell: bash
 
-      - name: Inspect tarball top-level directory and extract
+      - name: Extract tarball and determine SEVENZ_ROOT
         id: extract
         run: |
           set -euo pipefail
           mkdir -p sevenz-src
-          # determine top-level directory in archive robustly (handle leading ./)
-          top=$(tar -tf "$TARBALL_NAME" | sed -e 's|^\./||' | grep -v '^$' | head -n1 | cut -d/ -f1)
+
+          # Extract the tar.xz into sevenz-src
+          tar -xJf "$TARBALL_NAME" -C sevenz-src
+
+          # Find the single top-level directory created by extraction.
+          # Use find on the filesystem (avoids tar | head broken-pipe issues).
+          top=$(find sevenz-src -maxdepth 1 -mindepth 1 -type d -printf '%P\n' | head -n1 || true)
+
           if [ -z "$top" ]; then
-            echo "Could not determine top-level directory in $TARBALL_NAME"
+            echo "Could not find top-level directory under sevenz-src"
+            echo "Listing sevenz-src contents:"
+            ls -la sevenz-src || true
             exit 1
           fi
-          echo "Top-level directory in archive: $top"
-          # extract into folder
-          tar -xJf "$TARBALL_NAME" -C sevenz-src
-          # export SEVENZ_ROOT for subsequent steps
+
+          echo "Top-level directory: $top"
+          # Export SEVENZ_ROOT for subsequent steps
           echo "SEVENZ_ROOT=sevenz-src/$top" >> $GITHUB_ENV
           echo "SEVENZ_ROOT set to: sevenz-src/$top"
         shell: bash
@@ -63,6 +70,7 @@ jobs:
           echo "PWD: $(pwd)"
           echo "Contents:"
           ls -la
-          # run make using the relative makefile as requested
+
+          # Run the requested make
           make -j -f ../../cmpl_gcc.mak
         shell: bash
