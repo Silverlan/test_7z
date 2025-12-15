@@ -1,0 +1,68 @@
+name: Build 7-Zip Format7zF
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      SEVENZ_TARBALL_URL: "https://7-zip.org/a/7z2501-src.tar.xz"
+      TARBALL_NAME: "7z-src.tar.xz"
+
+    steps:
+      - name: Checkout repo (optional)
+        uses: actions/checkout@v4
+
+      - name: Install build deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xz-utils build-essential
+        shell: bash
+
+      - name: Download 7z source tarball
+        run: |
+          curl -fsSL "$SEVENZ_TARBALL_URL" -o "$TARBALL_NAME"
+          echo "Downloaded $TARBALL_NAME"
+        shell: bash
+
+      - name: Inspect tarball top-level directory and extract
+        id: extract
+        run: |
+          set -euo pipefail
+          mkdir -p sevenz-src
+          # determine top-level directory in archive robustly (handle leading ./)
+          top=$(tar -tf "$TARBALL_NAME" | sed -e 's|^\./||' | grep -v '^$' | head -n1 | cut -d/ -f1)
+          if [ -z "$top" ]; then
+            echo "Could not determine top-level directory in $TARBALL_NAME"
+            exit 1
+          fi
+          echo "Top-level directory in archive: $top"
+          # extract into folder
+          tar -xJf "$TARBALL_NAME" -C sevenz-src
+          # export SEVENZ_ROOT for subsequent steps
+          echo "SEVENZ_ROOT=sevenz-src/$top" >> $GITHUB_ENV
+          echo "SEVENZ_ROOT set to: sevenz-src/$top"
+        shell: bash
+
+      - name: Build Format7zF
+        run: |
+          set -euo pipefail
+          echo "SEVENZ_ROOT=$SEVENZ_ROOT"
+          TARGET_DIR="$SEVENZ_ROOT/CPP/7zip/Bundles/Format7zF"
+          if [ ! -d "$TARGET_DIR" ]; then
+            echo "ERROR: expected directory does not exist: $TARGET_DIR"
+            echo "Listing $SEVENZ_ROOT:"
+            ls -la "$SEVENZ_ROOT" || true
+            exit 1
+          fi
+          cd "$TARGET_DIR"
+          echo "PWD: $(pwd)"
+          echo "Contents:"
+          ls -la
+          # run make using the relative makefile as requested
+          make -j -f ../../cmpl_gcc.mak
+        shell: bash
